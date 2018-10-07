@@ -1,0 +1,84 @@
+Header diff between IPv4/IPv6
+Nxt Hop = Proto
+in Ipv6: NxtHeader = HopByHop(0: mandatory if indicate presence of optional header),
+50(ESP ecncry secu pro=CIA), 51(AH auth header), 6(TCP), 17(UDP), 1(ICMP=!operate under IP = Ethertype), 58(ICMPv6), 88(EIGRP), 89(OSPF)
+IPv6 type of addresses:
+- Unicast(GUA(2::/3), Loopback(::1/128), Unspecified(::/128), LL(FE80::/10), ULA(FC::/7), EmbededIPv4(::/80) , default route (in static routing protocol config) ::/0 
+	GU : Manual(static, static+eui-64) , dynamic(stateless(SLAAC, SLAAC+DHCPv6), statfull(DHCPv6, DHCPv6-PD(pref Deleg)))
+- Multicast : defined for specif group Assigned(FF08::8), Solicted Node Multicast(FF02::1:FF00:000/104) 
+- Anycast
+#Setting eui-64 adr on Cisco router
+ipv6 address 2001:db8:CAFE:2::/64 eui-64 or
+ipv6 address 2001:db8:CAFE:2::1/64 
+(Optinal)
+ipv6 general-prefix myGUA 001:db8:CAFE::/48 + ipv6 address myGUA  0:0:0:2::1/64
+
+#Note!!! if(ipv6 unicast-routing) is not set then router will act as a client.
+In this case we make it acquire its GUI/pref from remote router by type the following command on the interface:
+ ipv6 address autoconfig
+
+# Routing config
+ static route: next hop adress must be GUA (result from packet tracer!)
+   example:
+      ipv6 route 2001:DB8:CAFE:B001::/64 GigabitEthernet0/0 FE80::1
+	  ipv6 route 2001:DB8:BEEF:AAAA::9999/128 2001:DB8:CAFE:2F00::9
+ dynamic route: next hop adress can be LL (most commonly used)
+#ICMPv6(On top of IPv6) extended role over ICMPv4(on top of Ethernet)
+ICMPv6 Neighbor solictaion (=RS/RA/NS/NA) => for setting Global prefx (note LL always set by device itself)
+encompass ARP role = renamed : ICMPv6 Neighbor solicitaion (NS/NA)
+RA= (Multicast/(on Cisco sent evry 200s or when RS(Multicast))
+RA enabled with: ipv6 unicast-routing (router will send RA)
+3 of a kind:
+- SLAAC RA includes (Prefefix along with its lenght + Default Gateway) SLAAC=statless adr auto conf)
+- SLAAC + Stateless DHCPv6 for DNS
+- Sateteful Adr conf : all addressing (def gateway) except def gateway(ask DHCPv6)
+  - Stateful DHCPv6 PD (Pref Delegation)
+#LinkLocal (FE80-FEBF..) not routable (similar to Ipv4 APIPA) 
+ used : RS (src=LL or unspecified, dst=multicas) by host, defautl gateway = LL
+     - RA (src = LL) OSPF routing neib adr (LL) = next hop routers
+   
+ ipv6 enable (without Globl adr)
+ Unique on the link (router can set the same LL adr on all its if) 
+ ipv6 address FE80::1/64 link-local
+# Multicast(FF::/8 similar ro 224.0.0/4) two types Asigned, Solicitated Nodes
+#Scope: FF0X::/8 where X = [1(if),2(local scope),5(site),8(Org),E(Global)]
+- Assinged Multicast: FF02::1 all devices, FF02::02 all routers, 
+  FF02::5 (or 6 OSPF) FF02::9 all RIP FF02::A all EIGRP FF02::1:2 (All DHCP servers)
+  FF05::2 (all routers in site scope) FF05::1:3 all DHCP servers -> ipv6 multicast-routing (must be enabled first)
+	->Associated multicast address MAC FF05::2 = 3333000002 FF05::1:3 = 333300010003
+#Solicitated Nodes Multicas adr (set for every unicast(GUA or LL)/anycast address)
+  used for ICMPv6 Neighbor solicitaion (Adr reso = Ipv4 ARP), DAD (simlar to IPv4 Gratuitous ARP)
+  building: FF02::1:FF(last 3bytes) get also mapped to corespond MAC address = 33-33-FF-[last 3bytes] 
+									= 33-33-[Multcast adr last 4bytes]
+will be used for:
+Neib Solictation(= ARP Requtesd) src=Unicast dst=FF02::1:FF(last 3 bytes) with MAC=33-33-FF-[last 3 bytes]
+Neib Adv (only by the host belonging to the Solicitated Node grp) with src=Unicas MAc=(the actual MAC adr)
+=> each host will accept multicast adr created from(solicted nod mult GUA, solc nod LL, any assigned multicast)
+
+#SLAAC
+Through RA/RS (ICMPv6 Neib Discovery messages)
+Enabled by (ipv6 unicast-routing -> effects:RA/RS enabled + Routing (stat/dyn) +  FW Ipv6 packets)
+3 RA options
+ - SLAAC -NoDHCP(provide prefx, prefx lent, deflt gateway) O=0 & M=0
+ - SLAAC + DHCPv6 for DNS adrs O=1 M=0 : Stateless DHCPv6 server
+	(config_if)#ipv6 nd other-config-flag -> set O=1
+	(config_if)#ipv6 dhcp server MY_POOL_NAME
+	+ config)#ipv6 dhcp pool MY_POOL_NAME
+	  config-dhcpv6)#dsn-server 172.16.200.101
+	  config-dhcpv6)#domaine-name cisco.com
+ - Statefull DHCPv6 privide only dft gateway (the rest from DHCPv6) O=0 M=1
+	(config_if)#ipv6 nd managed-config-flag -> set M=1
+	(config_if)#ipv6 nd prefix 2001:db8:cafe:1111/64 no-autoconfig -> will clear the A flag
+	(config_if)#ipv6 dhcp server MY_POOL_NAME
+	+ config)#ipv6 dhcp pool MY_POOL_NAME
+	  config-dhcpv6)#address prefix 2001:1:1/64
+	  config-dhcpv6)#dsn-server 172.16.200.101
+	  config-dhcpv6)#domaine-name cisco.com
+config obtained from RA flags: 
+O (Other)=0(def:gives everthing), 1 (set only dft Gatew)
+M (Manged config) = 0(dflt) 1(ask averything from statefull dhcp serv)
+=>Once host built its ipv6 adrs from RA, it runs DAD (to ensure the resulted adr is unique)
+namely, ICMPv6 NS with src=own adrs and set a timer. If expired=> The adr is valid
+Note : there is also another flag that can be considered
+A(Autonomous Address flg)=0, 1(if M=1|0 & O=1) create 2 adrs, one using DHCPv- stateful + one from RA sent by router=2nd tempor adr
+IPv4 DORA(Discover|Offer|Request|Ack: all broadcast on both MAC/IP levels) replaced by SARR(Solictate/Advertise/RequestInfo/Reply)
